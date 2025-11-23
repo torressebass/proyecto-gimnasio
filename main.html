@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Entrenamientos - Principal</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container main-page">
+    <aside class="card">
+      <h2>Tu plan de entrenamiento</h2>
+      <p id="welcome">Cargando perfil...</p>
+
+      <div id="categories" class="categories"></div>
+
+      <section id="exerciseList"></section>
+
+        <section id="videoPlayer" class="video-player" aria-live="polite">
+          <!-- Iframe de YouTube se inyectará aquí al pulsar 'Ver video' -->
+        </section>
+
+      <div id="planSummary"></div>
+
+      <p class="small"><a href="#" id="logout">Cerrar sesión</a></p>
+    </aside>
+  </main>
+
+<!-- Ejercicios: JSON embebido para facilitar edición desde HTML -->
+<script id="exercises-data" type="application/json">
+{
+  "strength": [
+    {"id":"s1","name":"Sentadillas","reps":"3x10","videoId":"dsCuiccYNGs"},
+    {"id":"s2","name":"Press de banca","reps":"3x8","videoId":"jlFl7WJ1TzI"},
+    {"id":"s3","name":"Remo con barra","reps":"3x10","videoId":"OXH-ecu-Obw"}
+  ],
+  "cardio": [
+    {"id":"c1","name":"Correr 20 min","reps":"20 min","videoId":"PFo2afxqzHI"},
+    {"id":"c2","name":"Bicicleta","reps":"25 min","videoId":"nYiqTSS0aXM"},
+    {"id":"c3","name":"Saltar la cuerda","reps":"10 min","videoId":"AnQwqHgZdoQ"}
+  ],
+  "yoga": [
+    {"id":"y1","name":"Saludo al sol","reps":"10 min","videoId":"Pw8PYdZUlnI"},
+    {"id":"y2","name":"Postura del niño","reps":"3 min","videoId":"CLlAUN_r75k"},
+    {"id":"y3","name":"Guerrero II","reps":"3x30s","videoId":"qEjykUAm68s"}
+  ],
+  "hiit": [
+    {"id":"h1","name":"Tabata burpees","reps":"4 min","videoId":"IdxB68UzSSc"},
+    {"id":"h2","name":"Sprint 30s/30s","reps":"10 rounds","videoId":"GxkWIKuH21U"},
+    {"id":"h3","name":"Mountain climbers","reps":"3x40s","videoId":"v2XyNzc1jh8"}
+  ]
+}
+</script>
+
+<!-- Lógica principal incrustada (antes en main.js) -->
+<script>
+document.addEventListener('DOMContentLoaded', ()=>{
+  const profile = JSON.parse(localStorage.getItem('fitnessProfile'));
+  const welcome = document.getElementById('welcome');
+  const categories = document.getElementById('categories');
+  const exerciseList = document.getElementById('exerciseList');
+  const planSummary = document.getElementById('planSummary');
+  const logout = document.getElementById('logout');
+
+  if(!profile){
+    welcome.textContent = 'No hay perfil. Redirigiendo al registro...';
+    setTimeout(()=> location.href = 'index.html', 900);
+    return;
+  }
+
+  welcome.innerHTML = `Hola <strong>${profile.name}</strong> — Objetivo: ${profile.goal}`;
+
+  // ejercicios: se leen desde el bloque JSON en main.html (#exercises-data)
+  let exercisesByCategory = {};
+  const exercisesJson = document.getElementById('exercises-data');
+  if(exercisesJson && exercisesJson.textContent){
+    try{
+      exercisesByCategory = JSON.parse(exercisesJson.textContent);
+    }catch(e){
+      console.error('No se pudo parsear #exercises-data:', e);
+      exercisesByCategory = {};
+    }
+  }else{
+    console.warn('#exercises-data no encontrado — la lista de ejercicios estará vacía');
+  }
+
+  // Map values to labels
+  const labels = {strength:'Fuerza',cardio:'Cardio',yoga:'Yoga',hiit:'HIIT'};
+
+  profile.activities = profile.activities || [];
+  if(profile.activities.length === 0){
+    categories.innerHTML = '<p class="small">No elegiste actividades. Aquí tienes recomendaciones:</p>';
+    profile.activities = ['strength','cardio']; // default
+  }
+
+  categories.innerHTML = profile.activities.map(a=>`<button class="chip" data-cat="${a}">${labels[a]||a}</button>`).join(' ');
+
+  function showExercises(cat){
+    const list = exercisesByCategory[cat] || [];
+    exerciseList.innerHTML = `<h3>${labels[cat]||cat}</h3>` +
+      list.map(ex => `
+        <article class="exercise" data-id="${ex.id}">
+          <div class="ex-left">
+            <strong>${ex.name}</strong>
+            <div class="muted">${ex.reps}</div>
+          </div>
+          <div>
+            <button class="add">Agregar</button>
+            ${ex.videoId ? `<button class="watch" data-video="${ex.videoId}">Ver video</button>` : ''}
+          </div>
+        </article>
+      `).join('');
+
+    // attach handlers
+    exerciseList.querySelectorAll('.add').forEach((btn,i)=>{
+      btn.addEventListener('click', ()=>{
+        const ex = list[i];
+        addToPlan(ex);
+      });
+    });
+
+    // watch handlers
+    exerciseList.querySelectorAll('.watch').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const videoId = btn.dataset.video;
+        showVideo(videoId);
+      });
+    });
+  }
+
+  // Inserta iframe de YouTube configurado para autoplay + loop + mute
+  const videoPlayer = document.getElementById('videoPlayer');
+  function showVideo(videoId){
+    if(!videoId) return;
+    // build embed URL; loop requires playlist param equal to videoId
+    const src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&rel=0&modestbranding=1`;
+    videoPlayer.innerHTML = `
+      <div class="iframe-wrap">
+        <iframe src="${src}" title="Video ejercicio" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+      </div>
+    `;
+    videoPlayer.scrollIntoView({behavior:'smooth'});
+  }
+
+  let plan = [];
+  function addToPlan(ex){
+    if(plan.find(p=>p.id===ex.id)) return;
+    plan.push(ex);
+    renderPlan();
+  }
+
+  function renderPlan(){
+    if(plan.length===0){
+      planSummary.innerHTML = '<p class="small">Aún no has agregado ejercicios. Añade desde la lista.</p>';
+      return;
+    }
+    planSummary.innerHTML = '<h3>Tu plan</h3>' + plan.map(p=>`<div class="plan-item"><strong>${p.name}</strong> <span class="muted">${p.reps}</span></div>`).join('');
+  }
+
+  // handlers para los chips
+  categories.querySelectorAll('.chip').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      categories.querySelectorAll('.chip').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      showExercises(btn.dataset.cat);
+    });
+  });
+
+  // seleccionar categoría por defecto: usar hash si está presente, si no escoger la primera
+  const first = categories.querySelector('.chip');
+  const hashCat = window.location.hash ? window.location.hash.slice(1) : null;
+  let toOpen = null;
+  if(hashCat){
+    toOpen = categories.querySelector(`.chip[data-cat="${hashCat}"]`);
+  }
+  if(toOpen) toOpen.click();
+  else if(first) first.click();
+
+  logout.addEventListener('click', (e)=>{
+    e.preventDefault();
+    localStorage.removeItem('fitnessProfile');
+    location.href = 'index.html';
+  });
+
+});
+</script>
+</body>
+</html>
